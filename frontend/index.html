@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subvalore – Financial Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <span class="logo">Subvalore</span>
+      <p class="tagline">Financial data, fast.</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="search-section">
+      <form id="search-form" autocomplete="off">
+        <input
+          id="ticker-input"
+          type="text"
+          placeholder="Search ticker — e.g. AAPL, TSLA, MSFT"
+          maxlength="20"
+          spellcheck="false"
+        />
+        <button type="submit">Search</button>
+      </form>
+      <p id="search-hint" class="hint"></p>
+    </section>
+
+    <section id="status-bar" class="status-bar hidden"></section>
+
+    <section id="dashboard" class="dashboard hidden">
+      <nav class="tab-nav" id="tab-nav"></nav>
+      <div id="tab-content" class="tab-content"></div>
+    </section>
+  </main>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
