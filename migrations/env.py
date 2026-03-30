@@ -6,7 +6,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Make the app importable from the migrations directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
 from app.config import settings
 from app.database import Base
