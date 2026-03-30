@@ -7,7 +7,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import requests
 import yfinance as yf
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from app.utils.serializers import (
     dataframe_to_records,
@@ -20,6 +23,35 @@ from app.utils.serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _build_session() -> requests.Session:
+    """
+    Return a requests Session with a browser-like User-Agent and automatic
+    retry-with-backoff for 429 / 5xx responses.
+    Yahoo Finance aggressively rate-limits bot-like User-Agents.
+    """
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    })
+    retry = Retry(
+        total=4,
+        backoff_factor=2,          # waits 2s, 4s, 8s, 16s between retries
+        status_forcelist=[429, 500, 502, 503, 504],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
 
 # Datasets that are DataFrames stored as column-oriented dicts
 _COLUMN_DICT_DATASETS = {
@@ -52,7 +84,8 @@ def _try(symbol: str, name: str, fn):
 
 def fetch_raw(symbol: str) -> dict[str, Any]:
     """Fetch all datasets from yfinance. Each dataset is the raw yfinance object."""
-    t = yf.Ticker(symbol)
+    session = _build_session()
+    t = yf.Ticker(symbol, session=session)
 
     raw: dict[str, Any] = {
         "info":                      _try(symbol, "info",                      lambda: t.info or {}),

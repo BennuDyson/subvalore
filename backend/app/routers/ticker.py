@@ -3,6 +3,7 @@ from typing import Any
 
 import yfinance as yf
 from fastapi import APIRouter, Depends, HTTPException
+from app.services.ingestion import _build_session
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -119,7 +120,7 @@ def debug_yfinance(symbol: str) -> dict[str, Any]:
     Remove or restrict this endpoint in production.
     """
     symbol = symbol.upper()
-    t = yf.Ticker(symbol)
+    t = yf.Ticker(symbol, session=_build_session())
     report: dict[str, Any] = {}
 
     def probe(name: str, fn):
