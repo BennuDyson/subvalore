@@ -10,7 +10,7 @@ import os
 
 from app.config import settings
 from app.database import create_all_tables
-from app.routers import health
+from app.routers import health, ticker
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -45,6 +45,7 @@ app.add_middleware(
 
 # API routes
 app.include_router(health.router, prefix="/api")
+app.include_router(ticker.router, prefix="/api")
 
 # Serve frontend static files if the frontend directory exists
 _frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
