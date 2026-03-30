@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Data freshness
     data_stale_minutes: int = 60
 
+    # Scheduler
+    scheduler_enabled: bool = True
+    refresh_interval_hours: int = 24   # how often to refresh all known tickers
+
     # App
     app_env: str = "development"
     log_level: str = "INFO"

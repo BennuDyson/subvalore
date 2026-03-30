@@ -10,7 +10,8 @@ import os
 
 from app.config import settings
 from app.database import create_all_tables
-from app.routers import health, ticker
+from app.routers import health, ticker, scheduler
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -24,8 +25,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting Subvalore backend...")
     create_all_tables()
     logger.info("Database tables ensured.")
+    start_scheduler()
     yield
-    logger.info("Shutting down Subvalore backend.")
+    stop_scheduler()
+    logger.info("Subvalore backend shut down.")
 
 
 app = FastAPI(
@@ -46,6 +49,7 @@ app.add_middleware(
 # API routes
 app.include_router(health.router, prefix="/api")
 app.include_router(ticker.router, prefix="/api")
+app.include_router(scheduler.router, prefix="/api")
 
 # Serve frontend static files if the frontend directory exists
 _frontend_dir = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
