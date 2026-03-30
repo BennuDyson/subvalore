@@ -1,19 +1,103 @@
 # Subvalore
 
-A modern financial data platform.  Data is fetched once from **yfinance**, stored in **PostgreSQL**, and served instantly to the frontend on every subsequent request.
+A modern financial data platform. Data is fetched from **yfinance**, stored in **PostgreSQL**, and served instantly to the frontend on every request. A background scheduler keeps all data fresh automatically.
 
 ---
 
 ## Architecture
 
 ```
-Frontend (HTML/CSS/JS)
-        │  HTTP
-        ▼
-Backend (FastAPI)
-        │  SQLAlchemy
-        ▼
-PostgreSQL  ◄──── yfinance (fetched on demand / scheduled refresh)
+yfinance API  (fetched once, then refreshed every 24h by scheduler)
+      │
+      ▼
+PostgreSQL  ◄──── Background scheduler (APScheduler, configurable interval)
+      │
+      ▼
+FastAPI backend  (reads DB only — never waits on yfinance for a user request)
+      │
+      ▼
+Frontend (HTML/CSS/JS)  ──  instant response, always from DB
+```
+
+---
+
+## Quick start (one command)
+
+```powershell
+.\start.ps1
+```
+
+That's it. The script handles everything: PostgreSQL, virtual environment, dependencies, migrations, and the backend server.
+
+> **First time only:** if PowerShell blocks the script, run this once then retry:
+> ```powershell
+> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+> ```
+
+### Script flags
+
+| Flag | Effect |
+|------|--------|
+| `.\start.ps1` | Full startup (recommended) |
+| `.\start.ps1 -SkipInstall` | Skip `pip install` for faster restarts |
+| `.\start.ps1 -NoBrowser` | Don't auto-open the browser |
+
+---
+
+## Manual setup (step by step)
+
+If you prefer to run each step yourself:
+
+### 1. Copy environment file
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` if you want custom database credentials (defaults work fine for local dev).
+
+### 2. Start PostgreSQL
+
+```powershell
+docker compose up -d
+docker compose ps        # confirm it shows healthy
+```
+
+### 3. Create virtual environment and install dependencies
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+### 4. Run database migrations
+
+Run from the **project root** (where `alembic.ini` lives):
+
+```powershell
+cd ..   # back to project root if you are inside backend/
+
+# Generate migration file (first time only)
+alembic revision --autogenerate -m "initial schema"
+
+# Apply migrations
+alembic upgrade head
+```
+
+### 5. Start the backend
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 6. Open the app
+
+```
+http://localhost:8000/
 ```
 
 ---
@@ -22,94 +106,35 @@ PostgreSQL  ◄──── yfinance (fetched on demand / scheduled refresh)
 
 ```
 subvalore/
-├── backend/
-│   ├── app/
-│   │   ├── main.py          # FastAPI application entrypoint
-│   │   ├── config.py        # Pydantic settings (reads .env)
-│   │   ├── database.py      # SQLAlchemy engine, session, Base
-│   │   ├── models/          # ORM models (one file per table)
-│   │   ├── schemas/         # Pydantic request/response schemas
-│   │   ├── services/        # Business logic (ingestion, queries)
-│   │   ├── routers/         # FastAPI routers (one per feature area)
-│   │   └── utils/           # Shared helpers (serialisation etc.)
-│   └── requirements.txt
-├── frontend/
-│   ├── index.html
-│   ├── styles.css
-│   └── script.js
-├── migrations/              # Alembic migrations
-│   ├── env.py
-│   ├── script.py.mako
+├── start.ps1                    ← one-shot startup script
+├── docker-compose.yml           ← PostgreSQL container
+├── .env.example                 ← copy to .env
+├── alembic.ini                  ← migration config
+├── migrations/                  ← Alembic migration files
 │   └── versions/
-├── alembic.ini
-├── docker-compose.yml
-├── .env.example
-└── README.md
+├── backend/
+│   ├── requirements.txt
+│   └── app/
+│       ├── main.py              ← FastAPI app + lifespan
+│       ├── config.py            ← settings (reads .env)
+│       ├── database.py          ← SQLAlchemy engine + session
+│       ├── models/              ← ORM table definitions
+│       ├── schemas/             ← Pydantic schemas
+│       ├── routers/             ← API route handlers
+│       │   ├── health.py
+│       │   ├── ticker.py
+│       │   └── scheduler.py
+│       ├── services/
+│       │   ├── ingestion.py     ← yfinance fetch + normalize
+│       │   ├── ticker_service.py← DB read/write
+│       │   └── scheduler.py     ← background refresh job
+│       └── utils/
+│           └── serializers.py   ← pandas/numpy → JSON
+└── frontend/
+    ├── index.html
+    ├── styles.css
+    └── script.js
 ```
-
----
-
-## Local development setup
-
-### 1. Copy environment file
-
-```bash
-cp .env.example .env
-# Edit .env if you want different credentials
-```
-
-### 2. Start PostgreSQL with Docker Compose
-
-```bash
-docker compose up -d
-# Verify it is healthy
-docker compose ps
-```
-
-### 3. Create a Python virtual environment and install dependencies
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 4. Run database migrations
-
-From the **project root** (where `alembic.ini` lives):
-
-```bash
-cd ..   # back to project root if you are in backend/
-source backend/.venv/bin/activate
-
-# First time: let Alembic create the initial migration automatically
-alembic revision --autogenerate -m "initial schema"
-alembic upgrade head
-```
-
-Or, for development convenience, the app auto-creates tables on startup via
-`create_all_tables()` — but Alembic is preferred for production.
-
-### 5. Run the backend
-
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-API docs available at: http://localhost:8000/docs
-
-### 6. Open the frontend
-
-The frontend is served by FastAPI as static files.  Open:
-
-```
-http://localhost:8000/
-```
-
-No build step required — plain HTML/CSS/JS.
 
 ---
 
@@ -117,19 +142,30 @@ No build step required — plain HTML/CSS/JS.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/health` | Liveness check including DB connectivity |
-| GET | `/api/ticker/{symbol}/all` | All datasets for a ticker (serves from DB; refreshes if stale) |
-| POST | `/api/ticker/{symbol}/refresh` | Force a fresh fetch from yfinance and update DB |
-| GET | `/api/ticker/{symbol}/status` | Ticker existence in DB, last refresh time, staleness flag |
+| GET | `/api/health` | Liveness + DB connectivity check |
+| GET | `/api/ticker/{symbol}/all` | All datasets for a ticker (auto-refreshes if stale) |
+| POST | `/api/ticker/{symbol}/refresh` | Force a fresh yfinance fetch |
+| GET | `/api/ticker/{symbol}/status` | Last refresh time, staleness flag |
+| GET | `/api/scheduler/status` | Scheduler state, next/last run times |
+| POST | `/api/scheduler/run-now` | Trigger an immediate full refresh of all tickers |
+| GET | `/api/debug/{symbol}` | Raw yfinance diagnostic (dev only) |
+
+Interactive docs: **http://localhost:8000/docs**
 
 ---
 
-## Data refresh logic
+## How data refresh works
 
-1. `GET /api/ticker/{symbol}/all` checks `tickers.last_refreshed_at`.
-2. If data is **missing or older than `DATA_STALE_MINUTES`** (default 60 min), it triggers a yfinance fetch, stores results in PostgreSQL, then returns the fresh data.
-3. If data is **fresh**, it reads directly from PostgreSQL — no yfinance call.
-4. `POST /api/ticker/{symbol}/refresh` **always** forces a yfinance fetch regardless of freshness.
+| Scenario | What happens |
+|----------|-------------|
+| First search for a ticker | Fetches from yfinance → stores in DB → returns data (~5–15s) |
+| Same ticker, data fresh | Reads from PostgreSQL only (instant) |
+| Same ticker, data stale | Re-fetches from yfinance → updates DB → returns fresh data |
+| Scheduler fires (every 24h) | Refreshes every known ticker in the background automatically |
+| `POST /api/ticker/AAPL/refresh` | Forces immediate yfinance fetch for that ticker |
+| `POST /api/scheduler/run-now` | Forces immediate refresh of **all** tickers |
+
+Staleness threshold is controlled by `DATA_STALE_MINUTES` in `.env` (default: 60 minutes).
 
 ---
 
@@ -137,13 +173,23 @@ No build step required — plain HTML/CSS/JS.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `postgresql://subvalore:subvalore_secret@localhost:5432/subvalore` | Full SQLAlchemy DB URL |
-| `POSTGRES_DB` | `subvalore` | DB name (used by Docker Compose) |
-| `POSTGRES_USER` | `subvalore` | DB user (used by Docker Compose) |
-| `POSTGRES_PASSWORD` | `subvalore_secret` | DB password (used by Docker Compose) |
+| `DATABASE_URL` | `postgresql://subvalore:subvalore_secret@localhost:5432/subvalore` | SQLAlchemy connection URL |
+| `POSTGRES_DB` | `subvalore` | Database name (Docker Compose) |
+| `POSTGRES_USER` | `subvalore` | Database user (Docker Compose) |
+| `POSTGRES_PASSWORD` | `subvalore_secret` | Database password (Docker Compose) |
 | `DATA_STALE_MINUTES` | `60` | Minutes before cached data is considered stale |
+| `SCHEDULER_ENABLED` | `true` | Enable/disable the background refresh scheduler |
+| `REFRESH_INTERVAL_HOURS` | `24` | How often the scheduler refreshes all tickers |
 | `APP_ENV` | `development` | Environment name |
-| `LOG_LEVEL` | `INFO` | Python log level |
+| `LOG_LEVEL` | `INFO` | Python logging level |
+
+---
+
+## Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for PostgreSQL)
+- [Python 3.11+](https://www.python.org/downloads/)
+- PowerShell 5.1+ (comes with Windows 10/11)
 
 ---
 
@@ -151,7 +197,7 @@ No build step required — plain HTML/CSS/JS.
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1 | ✅ Complete | Scaffolding, DB setup, models, health endpoint |
-| 2 | Planned | yfinance ingestion, price_history, dividend_history, metrics, `/all`, `/refresh` |
-| 3 | Planned | Remaining datasets, staleness logic, `/status` endpoint |
+| 1 | ✅ Done | Scaffolding, DB models, health endpoint |
+| 2 | ✅ Done | yfinance ingestion, all datasets, `/all` `/refresh` `/status` |
+| 3 | ✅ Done | Scheduler, daily auto-refresh, `/scheduler/status` |
 | 4 | Planned | Full frontend rendering for all 22 tabs |
