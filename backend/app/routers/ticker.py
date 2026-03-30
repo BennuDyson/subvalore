@@ -1,5 +1,7 @@
 import logging
+from typing import Any
 
+import yfinance as yf
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -107,3 +109,50 @@ def get_ticker_status(symbol: str, db: Session = Depends(get_db)) -> dict:
         "is_stale": is_stale(ticker),
         "stale_threshold_minutes": settings.data_stale_minutes,
     }
+
+
+@router.get("/debug/{symbol}", tags=["debug"])
+def debug_yfinance(symbol: str) -> dict[str, Any]:
+    """
+    Raw yfinance diagnostic endpoint.
+    Shows exactly what yfinance returns for each dataset — shapes, types, errors.
+    Remove or restrict this endpoint in production.
+    """
+    symbol = symbol.upper()
+    t = yf.Ticker(symbol)
+    report: dict[str, Any] = {}
+
+    def probe(name: str, fn):
+        try:
+            val = fn()
+            if val is None:
+                return {"status": "none"}
+            if hasattr(val, "shape"):          # DataFrame / Series
+                return {"status": "ok", "type": type(val).__name__, "shape": list(val.shape), "columns": list(val.columns) if hasattr(val, "columns") else None, "sample": val.head(2).to_dict()}
+            if isinstance(val, dict):
+                return {"status": "ok", "type": "dict", "keys": list(val.keys())[:20], "len": len(val)}
+            if isinstance(val, list):
+                return {"status": "ok", "type": "list", "len": len(val), "sample": val[:2]}
+            return {"status": "ok", "type": type(val).__name__, "value": str(val)[:200]}
+        except Exception as exc:
+            return {"status": "error", "error": str(exc)}
+
+    report["info"]                       = probe("info",                       lambda: t.info)
+    report["history_7d_1m"]              = probe("history",                    lambda: t.history(period="7d", interval="1m"))
+    report["dividends"]                  = probe("dividends",                  lambda: t.dividends)
+    report["income_stmt"]                = probe("income_stmt",                lambda: t.income_stmt)
+    report["quarterly_income_stmt"]      = probe("quarterly_income_stmt",      lambda: t.quarterly_income_stmt)
+    report["balance_sheet"]              = probe("balance_sheet",              lambda: t.get_balance_sheet(as_dict=False, pretty=False, freq="quarterly"))
+    report["earnings_dates"]             = probe("earnings_dates",             lambda: t.earnings_dates)
+    report["calendar"]                   = probe("calendar",                   lambda: t.calendar)
+    report["recommendations"]            = probe("recommendations",            lambda: t.get_recommendations())
+    report["analyst_price_targets"]      = probe("analyst_price_targets",      lambda: t.get_analyst_price_targets())
+    report["earnings_estimate"]          = probe("earnings_estimate",          lambda: t.earnings_estimate)
+    report["revenue_estimate"]           = probe("revenue_estimate",           lambda: t.revenue_estimate)
+    report["eps_trend"]                  = probe("eps_trend",                  lambda: t.eps_trend)
+    report["growth_estimates"]           = probe("growth_estimates",           lambda: t.growth_estimates)
+    report["insider_purchases"]          = probe("insider_purchases",          lambda: t.insider_purchases)
+    report["insider_transactions"]       = probe("insider_transactions",       lambda: t.insider_transactions)
+    report["news"]                       = probe("news",                       lambda: t.news)
+
+    return {"symbol": symbol, "yfinance_version": yf.__version__, "report": report}
